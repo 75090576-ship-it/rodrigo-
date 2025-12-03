@@ -1,0 +1,126 @@
+import cv2
+import sys
+import os
+from datetime import datetime
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout
+from PyQt5.QtGui import QImage, QPixmap, QFont
+from PyQt5.QtCore import QTimer
+
+# Cargar modelo Haarcascade
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+
+# VENTANA PRINCIPAL (WELCOME ROCACO)
+class VentanaInicio(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("WELCOME ROCACO")
+        self.resize(400, 200)
+
+
+        titulo = QLabel("WELCOME IN ROCACO")
+        titulo.setFont(QFont("Arial", 24))
+        titulo.setStyleSheet("color: blue;")
+
+        btn_si = QPushButton("YES")
+        btn_no = QPushButton("NO")
+
+        btn_si.setStyleSheet("background-color: green; color: white; font-size: 18px; padding: 10px;")
+        btn_no.setStyleSheet("background-color: red; color: white; font-size: 18px; padding: 10px;")
+
+        btn_si.clicked.connect(self.abrir_detector)
+        btn_no.clicked.connect(self.cerrar)
+
+        layout_botones = QHBoxLayout()
+        layout_botones.addWidget(btn_si)
+        layout_botones.addWidget(btn_no)
+
+        layout = QVBoxLayout()
+        layout.addWidget(titulo)
+        layout.addLayout(layout_botones)
+
+        self.setLayout(layout)
+
+    def abrir_detector(self):
+        self.detector = VentanaDetector()
+        self.detector.show()
+        self.close()
+
+    def cerrar(self):
+        self.close()
+
+
+# VENTANA DEL DETECTOR DE ROSTRO
+class VentanaDetector(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Control de Acceso Facial")
+        self.resize(600, 500)
+
+        self.label_video = QLabel()
+        self.label_estado = QLabel("Esperando detección...")
+        self.label_estado.setFont(QFont("Arial", 20))
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.label_video)
+        layout.addWidget(self.label_estado)
+        self.setLayout(layout)
+
+        # Cámara
+        self.cap = cv2.VideoCapture(0)
+
+        if not self.cap.isOpened():
+            self.label_estado.setText("Error al abrir la cámara")
+            self.label_estado.setStyleSheet("color: red;")
+            return
+
+        # Timer para actualizar frames
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.actualizar_frame)
+        self.timer.start(30)
+
+        # Carpeta donde se guardan las fotos
+        if not os.path.exists("registros"):
+            os.makedirs("registros")
+
+    def actualizar_frame(self):
+        ret, frame = self.cap.read()
+        if not ret:
+            self.label_estado.setText("No se pudo leer el video")
+            self.label_estado.setStyleSheet("color: red;")
+            return
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        rostros = face_cascade.detectMultiScale(gray, 1.3, 4)
+
+        if len(rostros) > 0:
+            self.label_estado.setText("ACCESO PERMITIDO ✔")
+            self.label_estado.setStyleSheet("color: green;")
+
+            # Guardar foto
+            nombre = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            cv2.imwrite(f"registros/{nombre}.jpg", frame)
+
+        else:
+            self.label_estado.setText("ACCESO DENEGADO ✘")
+            self.label_estado.setStyleSheet("color: red;")
+
+        # Mostrar el video en PyQt5
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb.shape
+        img = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
+        self.label_video.setPixmap(QPixmap.fromImage(img))
+
+    def closeEvent(self, event):
+        # Detener el timer y liberar la cámara cuando la ventana se cierre
+        self.timer.stop()
+        self.cap.release()
+        event.accept()
+
+# INICIO DEL PROGRAMA
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    inicio = VentanaInicio()
+    inicio.show()
+    sys.exit(app.exec_())
